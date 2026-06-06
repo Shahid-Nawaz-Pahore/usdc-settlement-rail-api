@@ -1,0 +1,9 @@
+# Normalize line endings to LF in the repo so prettier --check and CI are
+# deterministic across Windows/macOS/Linux checkouts.
+* text=auto eol=lf
+
+# Binary assets — never normalize.
+*.png binary
+*.ico binary
+*.jpg binary
+*.svg text eol=lf

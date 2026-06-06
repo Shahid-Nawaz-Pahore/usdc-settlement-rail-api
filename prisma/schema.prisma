@@ -1,0 +1,96 @@
+// Prisma schema for the stablecoin settlement rail.
+// Decimal columns are fixed to 6 dp to mirror USDC's on-chain precision.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SettlementStatus {
+  RECEIVED
+  REJECTED_COMPLIANCE
+  COMPLIANCE_APPROVED
+  SUBMITTED
+  CONFIRMED
+  FINAL
+  FAILED
+}
+
+enum LedgerAccount {
+  OPERATOR
+  SETTLED_OUT
+  GENESIS // pseudo-account holding the opening on-chain balance snapshot
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+enum ReconciliationStatus {
+  MATCHED
+  MISMATCH
+}
+
+model Settlement {
+  id            String           @id @default(uuid())
+  instructionId String           @unique // idempotency key
+  toAddress     String
+  amount        Decimal          @db.Decimal(38, 6)
+  status        SettlementStatus @default(RECEIVED)
+  txHash        String?
+  nonce         Int?
+  failureReason String?
+  retryCount    Int              @default(0)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  ledgerEntries     LedgerEntry[]
+  statusTransitions StatusTransition[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model LedgerEntry {
+  id           String          @id @default(uuid())
+  settlementId String
+  account      LedgerAccount
+  direction    LedgerDirection
+  amount       Decimal         @db.Decimal(38, 6)
+  createdAt    DateTime        @default(now())
+
+  settlement Settlement @relation(fields: [settlementId], references: [id])
+
+  // Guards double-booking: a given settlement may post at most one row per account.
+  // The chain-listener can fire finalization more than once (duplicate events /
+  // reconnect re-checks); this constraint makes recordSettlementFinalized idempotent.
+  @@unique([settlementId, account])
+  @@index([account])
+}
+
+model StatusTransition {
+  id           String           @id @default(uuid())
+  settlementId String
+  fromStatus   SettlementStatus
+  toStatus     SettlementStatus
+  txHash       String?
+  createdAt    DateTime         @default(now())
+
+  settlement Settlement @relation(fields: [settlementId], references: [id])
+
+  @@index([settlementId])
+}
+
+model ReconciliationRun {
+  id            String               @id @default(uuid())
+  ledgerBalance Decimal              @db.Decimal(38, 6)
+  chainBalance  Decimal              @db.Decimal(38, 6)
+  pendingAmount Decimal              @db.Decimal(38, 6)
+  diff          Decimal              @db.Decimal(38, 6)
+  status        ReconciliationStatus
+  createdAt     DateTime             @default(now())
+}
