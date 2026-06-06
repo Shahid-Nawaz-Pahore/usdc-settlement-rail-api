@@ -1,0 +1,63 @@
+# Brings up Postgres + the settlement-rail API.
+#
+#   1. Copy .env.example -> .env and fill OPERATOR_PRIVATE_KEY + RPC URLs.
+#   2. docker compose up --build
+#   3. API on http://localhost:3000  (Swagger at /api/docs, health at /health)
+#
+# Compose interpolates ${VARS} from the project .env file. DATABASE_URL is
+# overridden below to point at the `postgres` service (not localhost).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: settlement_rail
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d settlement_rail']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/settlement_rail?schema=public
+      OPERATOR_PRIVATE_KEY: ${OPERATOR_PRIVATE_KEY}
+      RPC_HTTP_URL: ${RPC_HTTP_URL}
+      RPC_WSS_URL: ${RPC_WSS_URL}
+      USDC_CONTRACT_ADDRESS: ${USDC_CONTRACT_ADDRESS:-0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238}
+      CONFIRMATIONS_CONFIRMED: ${CONFIRMATIONS_CONFIRMED:-1}
+      CONFIRMATIONS_FINAL: ${CONFIRMATIONS_FINAL:-5}
+      STUCK_TX_SECONDS: ${STUCK_TX_SECONDS:-60}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      RECON_CRON: ${RECON_CRON:-*/5 * * * *}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:3001}
+      THROTTLE_TTL_SECONDS: ${THROTTLE_TTL_SECONDS:-60}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-10}
+      PORT: 3000
+    ports:
+      - '3000:3000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  pgdata:
