@@ -18,7 +18,7 @@ describe('ReconciliationService', () => {
     };
     chain = { getChainBalance: jest.fn() };
     ledger = { getOperatorBalance: jest.fn() };
-    state = { sumByStatuses: jest.fn() };
+    state = {};
     const config = { reconCron: '*/5 * * * *' };
     const registry = { addCronJob: jest.fn() };
     // Note: we never call onModuleInit, so no cron is actually scheduled.
@@ -32,9 +32,16 @@ describe('ReconciliationService', () => {
     );
   });
 
+  // pendingAmount is computed from mined receipts (computeMinedPending); the diff
+  // math is what these tests exercise, so we inject the pending value directly.
+  const withPending = (value: string) =>
+    jest
+      .spyOn(service as any, 'computeMinedPending')
+      .mockResolvedValue(new Prisma.Decimal(value));
+
   it('MATCHED when ledger − pending === chain', async () => {
     ledger.getOperatorBalance.mockResolvedValue(new Prisma.Decimal('100'));
-    state.sumByStatuses.mockResolvedValue(new Prisma.Decimal('10')); // pending
+    withPending('10');
     chain.getChainBalance.mockResolvedValue(new Prisma.Decimal('90'));
 
     const run = await service.run();
@@ -44,7 +51,7 @@ describe('ReconciliationService', () => {
 
   it('MISMATCH when balances diverge beyond epsilon', async () => {
     ledger.getOperatorBalance.mockResolvedValue(new Prisma.Decimal('100'));
-    state.sumByStatuses.mockResolvedValue(new Prisma.Decimal('10')); // pending
+    withPending('10');
     chain.getChainBalance.mockResolvedValue(new Prisma.Decimal('80'));
 
     const run = await service.run();
@@ -57,7 +64,7 @@ describe('ReconciliationService', () => {
     ledger.getOperatorBalance.mockResolvedValue(
       new Prisma.Decimal('100.0000005'),
     );
-    state.sumByStatuses.mockResolvedValue(new Prisma.Decimal('10'));
+    withPending('10');
     chain.getChainBalance.mockResolvedValue(new Prisma.Decimal('90'));
 
     const run = await service.run();

@@ -20,7 +20,8 @@ export class ReconciliationRunDto {
 
   @ApiProperty({
     example: '0.5',
-    description: 'Sum of SUBMITTED + CONFIRMED (not yet FINAL).',
+    description:
+      'In-flight settlements already mined on-chain but not yet FINAL.',
   })
   pendingAmount!: string;
 

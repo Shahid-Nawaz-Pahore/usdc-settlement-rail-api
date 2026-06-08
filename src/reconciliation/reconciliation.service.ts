@@ -24,9 +24,14 @@ const EPSILON = new Prisma.Decimal('0.000001');
  *   ledgerBalance − pendingAmount ≈ chainBalance
  *
  * Intuition: the ledger only records FINAL settlements, while the chain already
- * reflects every mined (but not-yet-final) transfer. Subtracting the pending
- * amount bridges the two. A mismatch is logged loudly and never auto-corrected —
- * it means a settlement moved on one side but not the other.
+ * reflects every mined (but not-yet-final) transfer. `pendingAmount` is exactly
+ * that bridge — the value that has left the chain but not yet been booked.
+ *
+ * Crucially, pending counts only settlements whose tx is actually MINED (receipt
+ * present, status 1), NOT every SUBMITTED row. A broadcast-but-not-yet-mined tx
+ * hasn't moved the chain *or* the ledger, so the two already agree; subtracting
+ * it would manufacture a false mismatch during the mempool window. A real
+ * mismatch is logged loudly and never auto-corrected.
  */
 @Injectable()
 export class ReconciliationService implements OnModuleInit {
@@ -57,7 +62,7 @@ export class ReconciliationService implements OnModuleInit {
     const [ledgerBalance, chainBalance, pendingAmount] = await Promise.all([
       this.ledger.getOperatorBalance(),
       this.chain.getChainBalance(),
-      this.state.sumByStatuses(PENDING_STATUSES),
+      this.computeMinedPending(),
     ]);
 
     const diff = ledgerBalance.minus(pendingAmount).minus(chainBalance);
@@ -91,5 +96,26 @@ export class ReconciliationService implements OnModuleInit {
     }
 
     return record;
+  }
+
+  /**
+   * Sum of in-flight (SUBMITTED/CONFIRMED) settlements whose transaction is
+   * actually mined and successful — i.e. has already reduced the on-chain
+   * balance but is not yet FINAL in the ledger. This is the precise value that
+   * bridges ledger and chain. Not-yet-mined (mempool) and mined-but-reverted
+   * settlements are excluded: neither has moved the operator's USDC balance.
+   */
+  private async computeMinedPending(): Promise<Prisma.Decimal> {
+    const inflight = await this.state.findByStatuses(PENDING_STATUSES);
+    const provider = this.chain.getProvider();
+    let sum = new Prisma.Decimal(0);
+    for (const s of inflight) {
+      if (!s.txHash) continue;
+      const receipt = await provider.getTransactionReceipt(s.txHash);
+      if (receipt && receipt.status === 1) {
+        sum = sum.plus(s.amount);
+      }
+    }
+    return sum;
   }
 }
