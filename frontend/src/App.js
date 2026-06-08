@@ -3,6 +3,7 @@ import { api } from './api';
 import SubmitForm from './components/SubmitForm';
 import ReconciliationPanel from './components/ReconciliationPanel';
 import SettlementsTable from './components/SettlementsTable';
+import SettlementDrawer from './components/SettlementDrawer';
 import StatCard from './components/StatCard';
 import { WalletIcon, LayersIcon, HourglassIcon, BoltIcon } from './components/icons';
 import { usdc } from './lib/format';
@@ -15,6 +16,7 @@ function App() {
   const [balance, setBalance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [backendUp, setBackendUp] = useState(true);
+  const [selectedId, setSelectedId] = useState(null);
   const timer = useRef(null);
 
   const refresh = useCallback(async () => {
@@ -41,6 +43,8 @@ function App() {
 
   const inFlightCount = settlements.filter((s) => IN_FLIGHT.has(s.status)).length;
   const finalCount = settlements.filter((s) => s.status === 'FINAL').length;
+  // Derive from the live list so the drawer summary updates as status changes.
+  const selected = settlements.find((s) => s.id === selectedId) ?? null;
 
   return (
     <div className="min-h-full">
@@ -91,9 +95,18 @@ function App() {
             </div>
           </div>
           <div className="lg:col-span-8">
-            <SettlementsTable settlements={settlements} loading={loading} />
+            <SettlementsTable
+              settlements={settlements}
+              loading={loading}
+              onSelect={(s) => setSelectedId(s.id)}
+            />
           </div>
         </div>
+
+        <SettlementDrawer
+          settlement={selected}
+          onClose={() => setSelectedId(null)}
+        />
 
         <footer className="mt-10 flex flex-col items-center gap-1 text-center text-xs text-slate-600">
           <span>settlement-rail · USDC clearing-to-chain on Ethereum Sepolia</span>

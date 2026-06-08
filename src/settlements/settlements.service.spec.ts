@@ -17,6 +17,8 @@ describe('SettlementsService', () => {
   beforeEach(() => {
     state = {
       findByInstructionId: jest.fn(),
+      findById: jest.fn(),
+      getTransitions: jest.fn(),
       create: jest.fn(),
       transition: jest.fn(),
       sumByStatuses: jest.fn().mockResolvedValue(new Prisma.Decimal('0')),
@@ -86,5 +88,30 @@ describe('SettlementsService', () => {
     const result = await service.create(dto);
     expect(result.settlement.status).toBe(SettlementStatus.REJECTED_COMPLIANCE);
     expect(relayer.enqueue).not.toHaveBeenCalled();
+  });
+
+  describe('getTransitions', () => {
+    it('returns the settlement transition rows (ordered as stored)', async () => {
+      const rows = [
+        { id: 't1', fromStatus: 'RECEIVED', toStatus: 'COMPLIANCE_APPROVED' },
+        { id: 't2', fromStatus: 'COMPLIANCE_APPROVED', toStatus: 'SUBMITTED' },
+      ];
+      state.findById.mockResolvedValue({ id: 's1' });
+      state.getTransitions.mockResolvedValue(rows);
+
+      const result = await service.getTransitions('s1');
+
+      expect(state.getTransitions).toHaveBeenCalledWith('s1');
+      expect(result).toEqual(rows);
+    });
+
+    it('throws 404 when the settlement does not exist', async () => {
+      state.findById.mockResolvedValue(null);
+
+      await expect(service.getTransitions('missing')).rejects.toMatchObject({
+        status: 404,
+      });
+      expect(state.getTransitions).not.toHaveBeenCalled();
+    });
   });
 });

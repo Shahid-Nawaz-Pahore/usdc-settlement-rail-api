@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma, Settlement, SettlementStatus } from '@prisma/client';
+import {
+  Prisma,
+  Settlement,
+  SettlementStatus,
+  StatusTransition,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Statuses that still draw against the available balance (not yet in the ledger). */
@@ -68,6 +73,14 @@ export class SettlementStateService {
   findByStatuses(statuses: SettlementStatus[]): Promise<Settlement[]> {
     return this.prisma.settlement.findMany({
       where: { status: { in: statuses } },
+    });
+  }
+
+  /** Append-only audit trail for a settlement, oldest transition first. */
+  getTransitions(settlementId: string): Promise<StatusTransition[]> {
+    return this.prisma.statusTransition.findMany({
+      where: { settlementId },
+      orderBy: { createdAt: 'asc' },
     });
   }
 

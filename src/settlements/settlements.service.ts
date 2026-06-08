@@ -5,7 +5,12 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { Prisma, Settlement, SettlementStatus } from '@prisma/client';
+import {
+  Prisma,
+  Settlement,
+  SettlementStatus,
+  StatusTransition,
+} from '@prisma/client';
 import { LedgerService } from '../ledger/ledger.service';
 import { RelayerService } from '../relayer/relayer.service';
 import { COMPLIANCE_PROVIDER } from '../compliance/compliance.interface';
@@ -113,6 +118,12 @@ export class SettlementsService {
 
   list(): Promise<Settlement[]> {
     return this.state.listRecent();
+  }
+
+  /** Read-only status-transition audit trail (404 if the settlement is unknown). */
+  async getTransitions(id: string): Promise<StatusTransition[]> {
+    await this.getById(id);
+    return this.state.getTransitions(id);
   }
 
   /** Ledger balance minus everything in-flight (not yet finalized in the ledger). */

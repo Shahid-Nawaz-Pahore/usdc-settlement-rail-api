@@ -39,6 +39,9 @@ export const api = {
 
   getSettlement: (id) => fetch(url(`/settlements/${id}`)).then(parse),
 
+  getTransitions: (id) =>
+    fetch(url(`/settlements/${id}/transitions`)).then(parse),
+
   // Returns { status, data } so the UI can distinguish 201 (new) from 200 (idempotent).
   createSettlement: async (body) => {
     const res = await fetch(url('/settlements'), {

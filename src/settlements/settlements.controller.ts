@@ -22,6 +22,7 @@ import { SettlementsService } from './settlements.service';
 import { SettlementPresenter } from './settlement.presenter';
 import { CreateSettlementDto } from './dto/create-settlement.dto';
 import { SettlementResponseDto } from './dto/settlement-response.dto';
+import { StatusTransitionDto } from './dto/status-transition.dto';
 
 @ApiTags('Settlements')
 @Controller('settlements')
@@ -76,5 +77,14 @@ export class SettlementsController {
   async getOne(@Param('id') id: string) {
     const settlement = await this.settlements.getById(id);
     return this.presenter.present(settlement);
+  }
+
+  @Get(':id/transitions')
+  @ApiOperation({
+    summary: 'Status-transition history for a settlement (audit trail)',
+  })
+  @ApiOkResponse({ type: StatusTransitionDto, isArray: true })
+  getTransitions(@Param('id') id: string) {
+    return this.settlements.getTransitions(id);
   }
 }

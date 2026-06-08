@@ -43,10 +43,15 @@ module.exports = {
         shimmer: {
           '100%': { transform: 'translateX(100%)' },
         },
+        'slide-in-right': {
+          from: { opacity: '0', transform: 'translateX(24px)' },
+          to: { opacity: '1', transform: 'none' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 0.4s ease-out both',
         shimmer: 'shimmer 1.6s infinite',
+        'slide-in-right': 'slide-in-right 0.25s ease-out both',
       },
     },
   },

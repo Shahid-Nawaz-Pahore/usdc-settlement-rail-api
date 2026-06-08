@@ -11,7 +11,7 @@ import {
 
 const IN_FLIGHT = new Set(['SUBMITTED', 'CONFIRMED']);
 
-export default function SettlementsTable({ settlements, loading }) {
+export default function SettlementsTable({ settlements, loading, onSelect }) {
   return (
     <div className="glass animate-fade-in overflow-hidden rounded-2xl shadow-card">
       <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
@@ -44,7 +44,11 @@ export default function SettlementsTable({ settlements, loading }) {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {settlements.map((s) => (
-                  <tr key={s.id} className="transition hover:bg-white/[0.04]">
+                  <tr
+                    key={s.id}
+                    onClick={() => onSelect?.(s)}
+                    className="cursor-pointer transition hover:bg-white/[0.04]"
+                  >
                     <Td>
                       <span className="font-medium text-slate-200">
                         {s.instructionId}
@@ -55,6 +59,7 @@ export default function SettlementsTable({ settlements, loading }) {
                         href={explorerAddress(s.toAddress)}
                         target="_blank"
                         rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         className="font-mono text-xs text-slate-400 transition hover:text-brand-300"
                         title={s.toAddress}
                       >
@@ -103,7 +108,8 @@ export default function SettlementsTable({ settlements, loading }) {
             {settlements.map((s) => (
               <div
                 key={s.id}
-                className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5"
+                onClick={() => onSelect?.(s)}
+                className="cursor-pointer rounded-xl border border-white/10 bg-white/[0.02] p-3.5 transition hover:bg-white/[0.05]"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-medium text-slate-200">
@@ -126,6 +132,7 @@ export default function SettlementsTable({ settlements, loading }) {
                     href={explorerAddress(s.toAddress)}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
                     className="font-mono text-slate-400"
                     title={s.toAddress}
                   >
@@ -154,6 +161,7 @@ function TxLink({ txHash }) {
       href={explorerTx(txHash)}
       target="_blank"
       rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
       className="inline-flex items-center gap-1 font-mono text-xs text-brand-300 transition hover:text-brand-200"
       title={txHash}
     >
