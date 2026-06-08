@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { getAddress } from 'ethers';
 import { api, ApiError } from '../api';
+import { BoltIcon } from './icons';
 
 function randomInstructionId() {
   const rand = Math.random().toString(36).slice(2, 8);
@@ -8,19 +9,18 @@ function randomInstructionId() {
 }
 
 const inputClass =
-  'w-full rounded-lg bg-ink-900 border border-ink-600 px-3 py-2 text-sm ' +
-  'text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 ' +
-  'focus:ring-indigo-500/60 focus:border-indigo-500/60';
+  'w-full rounded-xl bg-ink-950/60 border border-white/10 px-3.5 py-2.5 text-sm ' +
+  'text-slate-100 placeholder-slate-600 transition focus:outline-none ' +
+  'focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50';
 
 export default function SubmitForm({ onSubmitted }) {
   const [instructionId, setInstructionId] = useState(randomInstructionId());
   const [toAddress, setToAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState(null); // { kind: 'ok'|'idempotent'|'error', text }
+  const [result, setResult] = useState(null);
 
-  const addrValid =
-    toAddress.trim() !== '' && tryChecksum(toAddress) !== null;
+  const addrValid = toAddress.trim() !== '' && tryChecksum(toAddress) !== null;
   const amountValid = /^\d+(\.\d{1,6})?$/.test(amount) && Number(amount) > 0;
   const canSubmit =
     instructionId.trim() !== '' && addrValid && amountValid && !submitting;
@@ -45,10 +45,9 @@ export default function SubmitForm({ onSubmitted }) {
         kind: status === 200 ? 'idempotent' : 'ok',
         text:
           status === 200
-            ? `Idempotent: ${data.instructionId} already existed → ${data.status}`
+            ? `Idempotent — ${data.instructionId} already existed (${data.status})`
             : `Accepted ${data.instructionId} → ${data.status}`,
       });
-      // Prepare a fresh id for the next submission.
       setInstructionId(randomInstructionId());
       setAmount('');
       onSubmitted?.();
@@ -64,11 +63,16 @@ export default function SubmitForm({ onSubmitted }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-2xl border border-ink-700 bg-ink-800/60 p-5 shadow-lg"
+      className="glass animate-fade-in rounded-2xl p-5 shadow-card"
     >
-      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
-        Submit settlement
-      </h2>
+      <div className="mb-5 flex items-center gap-2.5">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-fuchsia-500 text-white">
+          <BoltIcon width={16} height={16} />
+        </span>
+        <h2 className="text-sm font-semibold text-slate-100">
+          Submit settlement
+        </h2>
+      </div>
 
       <div className="space-y-4">
         <Field label="Instruction ID" hint="idempotency key · ≤ 64 chars">
@@ -83,7 +87,7 @@ export default function SubmitForm({ onSubmitted }) {
             <button
               type="button"
               onClick={() => setInstructionId(randomInstructionId())}
-              className="shrink-0 rounded-lg border border-ink-600 px-3 text-xs text-slate-300 hover:bg-ink-700"
+              className="shrink-0 rounded-xl border border-white/10 px-3 text-slate-300 transition hover:bg-white/10"
               title="Generate a new id"
             >
               ↻
@@ -113,32 +117,37 @@ export default function SubmitForm({ onSubmitted }) {
         </Field>
 
         <Field label="Amount" hint="USDC · max 6 decimals">
-          <input
-            className={inputClass}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            inputMode="decimal"
-            placeholder="1.5"
-          />
+          <div className="relative">
+            <input
+              className={`${inputClass} pr-16`}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              inputMode="decimal"
+              placeholder="1.5"
+            />
+            <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500">
+              USDC
+            </span>
+          </div>
         </Field>
       </div>
 
       <button
         type="submit"
         disabled={!canSubmit}
-        className="mt-5 w-full rounded-lg bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
+        className="mt-5 w-full rounded-xl bg-gradient-to-r from-brand-500 to-fuchsia-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
       >
         {submitting ? 'Submitting…' : 'Submit settlement'}
       </button>
 
       {result && (
         <div
-          className={`mt-4 rounded-lg border px-3 py-2 text-xs ${
+          className={`mt-4 rounded-xl border px-3 py-2.5 text-xs ${
             result.kind === 'error'
-              ? 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+              ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
               : result.kind === 'idempotent'
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
-                : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
           }`}
         >
           {result.text}
@@ -157,7 +166,7 @@ function Field({ label, hint, hintTone = 'muted', children }) {
         : 'text-slate-500';
   return (
     <label className="block">
-      <div className="mb-1 flex items-baseline justify-between">
+      <div className="mb-1.5 flex items-baseline justify-between">
         <span className="text-xs font-medium text-slate-300">{label}</span>
         <span className={`text-[11px] ${toneClass}`}>{hint}</span>
       </div>

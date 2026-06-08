@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { api, ApiError } from '../api';
-import { usdc, formatTime } from '../lib/format';
+import { ScaleIcon, RefreshIcon } from './icons';
 
+/**
+ * Reconciliation KPI card: runs ledger-vs-chain on demand and shows the verdict.
+ */
 export default function ReconciliationPanel() {
   const [run, setRun] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -20,80 +23,45 @@ export default function ReconciliationPanel() {
   }
 
   const matched = run?.status === 'MATCHED';
+  const valueColor = !run
+    ? 'text-slate-300'
+    : matched
+      ? 'text-emerald-300'
+      : 'text-rose-300';
 
   return (
-    <div className="rounded-2xl border border-ink-700 bg-ink-800/60 p-5 shadow-lg">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-          Reconciliation
-        </h2>
+    <div className="glass animate-fade-in rounded-2xl p-4 shadow-card ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.05]">
+      <div className="flex items-start justify-between">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-300">
+          <ScaleIcon />
+        </span>
         <button
           onClick={runNow}
           disabled={loading}
-          className="rounded-lg border border-ink-600 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-ink-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 text-[11px] font-medium text-slate-300 transition hover:bg-white/10 disabled:opacity-50"
+          title="Run reconciliation now"
         >
-          {loading ? 'Running…' : 'Run now'}
+          <RefreshIcon
+            width={13}
+            height={13}
+            className={loading ? 'animate-spin' : ''}
+          />
+          {loading ? 'Running' : 'Run'}
         </button>
       </div>
-
-      {error && (
-        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
-          {error}
-        </div>
-      )}
-
-      {!run && !error && (
-        <p className="text-sm text-slate-500">
-          Run a check to compare the ledger against the chain. Also runs
-          automatically on the server cron.
-        </p>
-      )}
-
-      {run && (
-        <div className="space-y-3">
-          <div
-            className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
-              matched
-                ? 'border-emerald-500/40 bg-emerald-500/10'
-                : 'border-rose-500/40 bg-rose-500/10'
-            }`}
-          >
-            <span
-              className={`text-sm font-bold tracking-wide ${
-                matched ? 'text-emerald-300' : 'text-rose-300'
-              }`}
-            >
-              {run.status}
-            </span>
-            <span className="text-[11px] text-slate-400">
-              {formatTime(run.createdAt)}
-            </span>
-          </div>
-          <Line label="Ledger balance" value={usdc(run.ledgerBalance)} />
-          <Line label="Pending amount" value={usdc(run.pendingAmount)} />
-          <Line label="Chain balance" value={usdc(run.chainBalance)} />
-          <Line
-            label="Diff (ledger − pending − chain)"
-            value={usdc(run.diff)}
-            tone={matched ? 'good' : 'bad'}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Line({ label, value, tone }) {
-  const toneClass =
-    tone === 'good'
-      ? 'text-emerald-300'
-      : tone === 'bad'
-        ? 'text-rose-300'
-        : 'text-slate-200';
-  return (
-    <div className="flex items-baseline justify-between">
-      <span className="text-xs text-slate-400">{label}</span>
-      <span className={`font-mono text-sm ${toneClass}`}>{value}</span>
+      <div className="mt-3 text-xs font-medium uppercase tracking-wider text-slate-400">
+        Reconciliation
+      </div>
+      <div className={`mt-0.5 text-2xl font-semibold ${valueColor}`}>
+        {run ? run.status : '—'}
+      </div>
+      <div className="mt-1 truncate text-[11px] text-slate-500">
+        {error
+          ? error
+          : run
+            ? `diff ${run.diff} · ledger ${run.ledgerBalance} vs chain ${run.chainBalance}`
+            : 'Ledger vs chain · also on a server cron'}
+      </div>
     </div>
   );
 }
