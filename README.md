@@ -1,5 +1,5 @@
 <!-- Update OWNER/REPO below to your GitHub path so the badge resolves. -->
-[![CI](https://github.com/Shahid-Nawaz-Pahore/usdc-settlement/actions/workflows/ci.yml/badge.svg)](https://github.com/Shahid-Nawaz-Pahore/usdc-settlement/actions/workflows/ci.yml)
+[![CI](https://github.com/Shahid-Nawaz-Pahore/usdc-settlement-rail-api/actions/workflows/ci.yml/badge.svg)](https://github.com/Shahid-Nawaz-Pahore/usdc-settlement-rail-api/actions/workflows/ci.yml)
 
 # settlement-rail
 
@@ -257,16 +257,9 @@ Liveness probe: `{ "status": "ok" }`.
 
 ## Dashboard (frontend)
 
-A React + Tailwind operator dashboard in [`frontend/`](frontend/) (Create React App + CRACO). Submit settlements, watch them flow `RECEIVED → FINAL` with live confirmation counts, see the ledger balance, and trigger reconciliation.
+A React + Tailwind operator dashboard lives in a **separate repository**. It submits settlements, watches them flow `RECEIVED → FINAL` with live confirmation counts, shows the ledger balance, runs reconciliation, and opens a per-settlement audit-trail timeline.
 
-```bash
-# Terminal 1 — backend on :3000
-npm run start:dev
-# Terminal 2 — dashboard on :3001
-cd frontend && npm install && npm start
-```
-
-In dev the frontend (`:3001`) proxies API calls to `:3000`, so there's no CORS. For a deployed build, set `REACT_APP_API_URL` (API origin) and `REACT_APP_EXPLORER_BASE_URL`; the backend's `ALLOWED_ORIGIN` must include the dashboard origin. Recipient addresses are checksum-validated client-side with ethers; `txHash`es link out to Etherscan.
+It talks to this API over the public routes below. For a deployed build it sets `REACT_APP_API_URL` (this API's origin) and `REACT_APP_EXPLORER_BASE_URL`; the backend's `ALLOWED_ORIGIN` must include the dashboard origin. In local dev it proxies to `:3000`, so there's no CORS.
 
 ---
 

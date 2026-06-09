@@ -42,6 +42,9 @@ lerna-debug.log*
 .env.production.local
 .env.local
 
+# frontend lives in a separate repository
+/frontend
+
 # temp directory
 .temp
 .tmp
