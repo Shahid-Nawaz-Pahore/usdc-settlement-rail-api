@@ -35,7 +35,17 @@ async function bootstrap(): Promise<void> {
     .setVersion('1.0')
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+  // Load the Swagger UI assets from a CDN. On serverless hosts (Vercel) the
+  // bundled swagger-ui-dist static files aren't served, which leaves a blank
+  // page; the CDN URLs make the docs render anywhere.
+  SwaggerModule.setup('api/docs', app, document, {
+    customCssUrl:
+      'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css',
+    customJs: [
+      'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js',
+      'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js',
+    ],
+  });
 
   // Graceful shutdown: triggers OnModuleDestroy across modules (relayer drain,
   // WSS close, Prisma disconnect).
