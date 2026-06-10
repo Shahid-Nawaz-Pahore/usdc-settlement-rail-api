@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   Logger,
   OnModuleDestroy,
@@ -8,12 +9,14 @@ import {
   Contract,
   JsonRpcProvider,
   WebSocketProvider,
-  Wallet,
+  Signer,
   formatUnits,
   parseUnits,
 } from 'ethers';
 import { Prisma } from '@prisma/client';
 import { AppConfigService } from '../config/app-config.service';
+import { SIGNER } from '../signer/signer.interface';
+import type { ISigner } from '../signer/signer.interface';
 import { ERC20_ABI } from './erc20.abi';
 
 type ResubscribeHandler = () => void | Promise<void>;
@@ -30,8 +33,9 @@ export class ChainService implements OnModuleInit, OnModuleDestroy {
 
   private httpProvider!: JsonRpcProvider;
   private wssProvider!: WebSocketProvider;
-  private wallet!: Wallet;
-  /** Wallet-connected contract — used for state-changing transfer() calls. */
+  private walletSigner!: Signer;
+  private operatorAddress!: string;
+  /** Signer-connected contract — used for state-changing transfer() calls. */
   private usdcWrite!: Contract;
   /** WSS-provider-connected contract — used for Transfer event subscriptions. */
   private usdcEvents!: Contract;
@@ -41,16 +45,22 @@ export class ChainService implements OnModuleInit, OnModuleDestroy {
   private reconnectAttempts = 0;
   private readonly resubscribeHandlers: ResubscribeHandler[] = [];
 
-  constructor(private readonly config: AppConfigService) {}
+  constructor(
+    private readonly config: AppConfigService,
+    @Inject(SIGNER) private readonly signer: ISigner,
+  ) {}
 
   async onModuleInit(): Promise<void> {
-    // staticNetwork avoids a chainId round-trip on every call.
     this.httpProvider = new JsonRpcProvider(this.config.rpcHttpUrl);
-    this.wallet = new Wallet(this.config.operatorPrivateKey, this.httpProvider);
+    // The signer owns the key; we connect it to our provider to broadcast.
+    this.walletSigner = this.signer
+      .getEthersSigner()
+      .connect(this.httpProvider);
+    this.operatorAddress = await this.signer.getAddress();
     this.usdcWrite = new Contract(
       this.config.usdcContractAddress,
       ERC20_ABI,
-      this.wallet,
+      this.walletSigner,
     );
 
     try {
@@ -163,8 +173,8 @@ export class ChainService implements OnModuleInit, OnModuleDestroy {
     return this.httpProvider;
   }
 
-  getWallet(): Wallet {
-    return this.wallet;
+  getWallet(): Signer {
+    return this.walletSigner;
   }
 
   /** Wallet-connected contract for transfer(); pass nonce/gas as overrides. */
@@ -178,7 +188,7 @@ export class ChainService implements OnModuleInit, OnModuleDestroy {
   }
 
   getOperatorAddress(): string {
-    return this.wallet.address;
+    return this.operatorAddress;
   }
 
   getDecimals(): number {

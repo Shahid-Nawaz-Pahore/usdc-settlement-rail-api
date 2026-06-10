@@ -5,6 +5,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AppConfigModule } from './config/app-config.module';
 import { AppConfigService } from './config/app-config.service';
 import { ObservabilityModule } from './observability/observability.module';
+import { SignerModule } from './signer/signer.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ChainModule } from './chain/chain.module';
 import { LedgerModule } from './ledger/ledger.module';
@@ -42,8 +43,9 @@ import { DvpModule } from './dvp/dvp.module';
       },
     }),
     ObservabilityModule, // global: Prometheus metrics + /metrics
+    SignerModule, // global: ISigner (env key today; KMS/MPC pluggable)
     PrismaModule, // global: db
-    ChainModule, // global: providers, wallet, USDC contract
+    ChainModule, // global: providers, signer, USDC contract
     ScheduleModule.forRoot(), // enables @Interval and dynamic cron
     // Rate limiter (config-driven). Applied selectively to POST /settlements
     // via @UseGuards in the controller, so GET polling stays unthrottled.
