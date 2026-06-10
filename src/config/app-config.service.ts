@@ -76,6 +76,11 @@ export class AppConfigService {
     return Number(this.req<number>('THROTTLE_LIMIT'));
   }
 
+  /** Optional Redis connection string for the event outbox relay. */
+  get redisUrl(): string | undefined {
+    return this.config.get<string>('REDIS_URL');
+  }
+
   get port(): number {
     return Number(this.req<number>('PORT'));
   }

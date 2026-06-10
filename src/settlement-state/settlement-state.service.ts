@@ -21,6 +21,14 @@ export const PENDING_STATUSES: SettlementStatus[] = [
   SettlementStatus.CONFIRMED,
 ];
 
+/** Status → outbox event type. Only externally-meaningful transitions emit. */
+const OUTBOX_EVENT_TYPES: Partial<Record<SettlementStatus, string>> = {
+  [SettlementStatus.SUBMITTED]: 'settlement.submitted',
+  [SettlementStatus.CONFIRMED]: 'settlement.confirmed',
+  [SettlementStatus.FINAL]: 'settlement.final',
+  [SettlementStatus.FAILED]: 'settlement.failed',
+};
+
 export interface TransitionOptions {
   txHash?: string | null;
   nonce?: number | null;
@@ -157,6 +165,27 @@ export class SettlementStateService {
           txHash: opts.txHash ?? current.txHash ?? null,
         },
       });
+
+      // Transactional outbox: emit a domain event in the SAME transaction for
+      // externally-meaningful transitions, so an event is never lost or written
+      // without its status change. OutboxRelay ships it to the broker.
+      const eventType = OUTBOX_EVENT_TYPES[toStatus];
+      if (eventType) {
+        await tx.outboxEvent.create({
+          data: {
+            settlementId: id,
+            type: eventType,
+            payload: {
+              settlementId: id,
+              instructionId: next.instructionId,
+              status: toStatus,
+              amount: next.amount.toString(),
+              toAddress: next.toAddress,
+              txHash: next.txHash,
+            },
+          },
+        });
+      }
 
       return next;
     });

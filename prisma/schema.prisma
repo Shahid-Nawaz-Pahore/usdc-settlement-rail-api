@@ -97,3 +97,18 @@ model ReconciliationRun {
   status        ReconciliationStatus
   createdAt     DateTime             @default(now())
 }
+
+// Transactional outbox: a domain event is written here in the SAME db
+// transaction as the settlement status change, then relayed to a broker
+// (Redis Streams) by OutboxRelay. Guarantees at-least-once delivery without a
+// distributed transaction — the integration point a clearing system consumes.
+model OutboxEvent {
+  id           String    @id @default(uuid())
+  settlementId String
+  type         String // settlement.submitted | .confirmed | .final | .failed
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+
+  @@index([publishedAt])
+}

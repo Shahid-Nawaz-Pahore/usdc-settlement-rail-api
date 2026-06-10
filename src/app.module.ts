@@ -15,6 +15,7 @@ import { ChainListenerModule } from './chain-listener/chain-listener.module';
 import { SettlementsModule } from './settlements/settlements.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { HealthModule } from './health/health.module';
+import { OutboxModule } from './outbox/outbox.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { HealthModule } from './health/health.module';
     SettlementsModule,
     ReconciliationModule,
     HealthModule,
+    OutboxModule,
   ],
 })
 export class AppModule {}
