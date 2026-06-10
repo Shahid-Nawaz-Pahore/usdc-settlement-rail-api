@@ -76,6 +76,16 @@ export class AppConfigService {
     return Number(this.req<number>('THROTTLE_LIMIT'));
   }
 
+  /** Optional Redis connection string for the event outbox relay. */
+  get redisUrl(): string | undefined {
+    return this.config.get<string>('REDIS_URL');
+  }
+
+  /** Optional deployed DvPEscrow contract address. */
+  get dvpEscrowAddress(): string | undefined {
+    return this.config.get<string>('DVP_ESCROW_ADDRESS');
+  }
+
   get port(): number {
     return Number(this.req<number>('PORT'));
   }

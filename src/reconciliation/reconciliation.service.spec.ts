@@ -21,6 +21,10 @@ describe('ReconciliationService', () => {
     state = {};
     const config = { reconCron: '*/5 * * * *' };
     const registry = { addCronJob: jest.fn() };
+    const metrics = {
+      reconRuns: { inc: jest.fn() },
+      reconMismatches: { inc: jest.fn() },
+    };
     // Note: we never call onModuleInit, so no cron is actually scheduled.
     service = new ReconciliationService(
       prisma,
@@ -29,6 +33,7 @@ describe('ReconciliationService', () => {
       state,
       config as any,
       registry as any,
+      metrics as any,
     );
   });
 

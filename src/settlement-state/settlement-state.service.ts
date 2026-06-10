@@ -21,11 +21,21 @@ export const PENDING_STATUSES: SettlementStatus[] = [
   SettlementStatus.CONFIRMED,
 ];
 
+/** Status → outbox event type. Only externally-meaningful transitions emit. */
+const OUTBOX_EVENT_TYPES: Partial<Record<SettlementStatus, string>> = {
+  [SettlementStatus.SUBMITTED]: 'settlement.submitted',
+  [SettlementStatus.CONFIRMED]: 'settlement.confirmed',
+  [SettlementStatus.FINAL]: 'settlement.final',
+  [SettlementStatus.FAILED]: 'settlement.failed',
+};
+
 export interface TransitionOptions {
   txHash?: string | null;
   nonce?: number | null;
   failureReason?: string | null;
   retryCount?: number;
+  confirmedBlockHash?: string | null;
+  confirmedBlockNumber?: number | null;
   /** If set, the transition is skipped (no-op) unless current status is one of these. */
   expectedFrom?: SettlementStatus[];
 }
@@ -102,6 +112,18 @@ export class SettlementStateService {
     return agg._sum.amount ?? new Prisma.Decimal(0);
   }
 
+  /** Count of real settlements per status (excludes the GENESIS pseudo-row). */
+  async countByStatus(): Promise<Record<string, number>> {
+    const rows = await this.prisma.settlement.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+      where: { instructionId: { not: '__genesis_opening_balance__' } },
+    });
+    const counts: Record<string, number> = {};
+    for (const row of rows) counts[row.status] = row._count._all;
+    return counts;
+  }
+
   /**
    * Atomically: update the settlement's status (+ optional fields) and append a
    * StatusTransition row, in a single DB transaction. Returns the updated row,
@@ -128,6 +150,10 @@ export class SettlementStateService {
       if (opts.failureReason !== undefined)
         data.failureReason = opts.failureReason;
       if (opts.retryCount !== undefined) data.retryCount = opts.retryCount;
+      if (opts.confirmedBlockHash !== undefined)
+        data.confirmedBlockHash = opts.confirmedBlockHash;
+      if (opts.confirmedBlockNumber !== undefined)
+        data.confirmedBlockNumber = opts.confirmedBlockNumber;
 
       const next = await tx.settlement.update({ where: { id }, data });
 
@@ -139,6 +165,27 @@ export class SettlementStateService {
           txHash: opts.txHash ?? current.txHash ?? null,
         },
       });
+
+      // Transactional outbox: emit a domain event in the SAME transaction for
+      // externally-meaningful transitions, so an event is never lost or written
+      // without its status change. OutboxRelay ships it to the broker.
+      const eventType = OUTBOX_EVENT_TYPES[toStatus];
+      if (eventType) {
+        await tx.outboxEvent.create({
+          data: {
+            settlementId: id,
+            type: eventType,
+            payload: {
+              settlementId: id,
+              instructionId: next.instructionId,
+              status: toStatus,
+              amount: next.amount.toString(),
+              toAddress: next.toAddress,
+              txHash: next.txHash,
+            },
+          },
+        });
+      }
 
       return next;
     });

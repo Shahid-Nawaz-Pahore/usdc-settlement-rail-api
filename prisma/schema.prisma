@@ -45,6 +45,9 @@ model Settlement {
   nonce         Int?
   failureReason String?
   retryCount    Int              @default(0)
+  // Block the tx was seen mined in at CONFIRMED — used to detect reorgs.
+  confirmedBlockHash   String?
+  confirmedBlockNumber Int?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
@@ -93,4 +96,19 @@ model ReconciliationRun {
   diff          Decimal              @db.Decimal(38, 6)
   status        ReconciliationStatus
   createdAt     DateTime             @default(now())
+}
+
+// Transactional outbox: a domain event is written here in the SAME db
+// transaction as the settlement status change, then relayed to a broker
+// (Redis Streams) by OutboxRelay. Guarantees at-least-once delivery without a
+// distributed transaction — the integration point a clearing system consumes.
+model OutboxEvent {
+  id           String    @id @default(uuid())
+  settlementId String
+  type         String // settlement.submitted | .confirmed | .final | .failed
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+
+  @@index([publishedAt])
 }

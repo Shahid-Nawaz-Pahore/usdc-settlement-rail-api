@@ -33,6 +33,17 @@ export const envValidationSchema = Joi.object({
   THROTTLE_TTL_SECONDS: Joi.number().integer().min(1).default(60),
   THROTTLE_LIMIT: Joi.number().integer().min(1).default(10),
 
+  // Optional: Redis (Streams) for the event outbox relay. Unset → log-only
+  // publisher (events still written to the outbox, just not relayed).
+  REDIS_URL: Joi.string()
+    .uri({ scheme: ['redis', 'rediss'] })
+    .optional(),
+
+  // Optional: deployed DvPEscrow address. Unset → /settlements/dvp returns 503.
+  DVP_ESCROW_ADDRESS: Joi.string()
+    .pattern(/^0x[0-9a-fA-F]{40}$/)
+    .optional(),
+
   PORT: Joi.number().integer().min(1).max(65535).default(3000),
 }).custom((value: Record<string, number>, helpers) => {
   if (value.CONFIRMATIONS_FINAL < value.CONFIRMATIONS_CONFIRMED) {

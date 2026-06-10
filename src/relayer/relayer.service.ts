@@ -9,6 +9,7 @@ import { parseUnits } from 'ethers';
 import { ChainService } from '../chain/chain.service';
 import { AppConfigService } from '../config/app-config.service';
 import { SettlementStateService } from '../settlement-state/settlement-state.service';
+import { MetricsService } from '../observability/metrics.service';
 import { Mutex } from './mutex';
 import { classifyTxError } from './tx-error';
 
@@ -54,7 +55,13 @@ export class RelayerService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly chain: ChainService,
     private readonly config: AppConfigService,
     private readonly state: SettlementStateService,
+    private readonly metrics: MetricsService,
   ) {}
+
+  /** Reflect queued + in-flight count into the Prometheus gauge. */
+  private updateQueueDepth(): void {
+    this.metrics.queueDepth.set(this.queue.length + this.inflight.size);
+  }
 
   async onApplicationBootstrap(): Promise<void> {
     this.localNonce = await this.chain
@@ -81,6 +88,7 @@ export class RelayerService implements OnApplicationBootstrap, OnModuleDestroy {
   private enqueueId(id: string): void {
     if (this.draining) return;
     this.queue.push(id);
+    this.updateQueueDepth();
     void this.runWorker();
   }
 
@@ -100,6 +108,7 @@ export class RelayerService implements OnApplicationBootstrap, OnModuleDestroy {
             (err as Error).stack,
           );
         }
+        this.updateQueueDepth();
       }
     } finally {
       this.workerRunning = false;
@@ -360,6 +369,7 @@ export class RelayerService implements OnApplicationBootstrap, OnModuleDestroy {
         maxFeePerGas: fees.maxFeePerGas,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
       })) as { hash: string };
+      this.metrics.broadcasts.inc();
       return { hash: tx.hash };
     });
   }

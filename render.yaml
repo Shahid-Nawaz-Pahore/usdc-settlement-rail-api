@@ -1,0 +1,52 @@
+# Render blueprint — deploys the settlement rail as an ALWAYS-ON service (unlike
+# Vercel serverless, this runs the relayer worker, chain-listener, cron, and
+# outbox relay). Managed Postgres included. Push this repo to Render and create
+# a Blueprint instance, then fill the `sync: false` secrets in the dashboard.
+services:
+  - type: web
+    name: settlement-rail-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter # free tier sleeps on idle; use starter+ for true always-on
+    healthCheckPath: /health/live
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: settlement-rail-db
+          property: connectionString
+      - key: USDC_CONTRACT_ADDRESS
+        value: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'
+      - key: CONFIRMATIONS_CONFIRMED
+        value: '1'
+      - key: CONFIRMATIONS_FINAL
+        value: '5'
+      - key: STUCK_TX_SECONDS
+        value: '60'
+      - key: MAX_RETRIES
+        value: '3'
+      - key: RECON_CRON
+        value: '*/5 * * * *'
+      - key: THROTTLE_TTL_SECONDS
+        value: '60'
+      - key: THROTTLE_LIMIT
+        value: '10'
+      # ---- secrets / per-environment: set these in the Render dashboard ----
+      - key: OPERATOR_PRIVATE_KEY
+        sync: false
+      - key: RPC_HTTP_URL
+        sync: false
+      - key: RPC_WSS_URL
+        sync: false
+      - key: ALLOWED_ORIGIN
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: DVP_ESCROW_ADDRESS
+        sync: false
+
+databases:
+  - name: settlement-rail-db
+    plan: free

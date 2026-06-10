@@ -5,6 +5,8 @@ import { ChainService } from '../chain/chain.service';
 import { AppConfigService } from '../config/app-config.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { SettlementStateService } from '../settlement-state/settlement-state.service';
+import { MetricsService } from '../observability/metrics.service';
+import type { TransactionReceipt } from 'ethers';
 
 /**
  * The chain is the source of truth. This service:
@@ -27,6 +29,7 @@ export class ChainListenerService implements OnApplicationBootstrap {
     private readonly config: AppConfigService,
     private readonly state: SettlementStateService,
     private readonly ledger: LedgerService,
+    private readonly metrics: MetricsService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -104,7 +107,15 @@ export class ChainListenerService implements OnApplicationBootstrap {
     const receipt = await this.chain
       .getProvider()
       .getTransactionReceipt(settlement.txHash);
-    if (!receipt) return; // not mined yet — relayer's stuck-watcher owns this case
+
+    if (!receipt) {
+      // A tx we'd already confirmed has vanished from the canonical chain — a
+      // reorg dropped it. Otherwise it's simply not mined yet (relayer's job).
+      if (settlement.confirmedBlockHash) {
+        await this.handleReorg(settlement, 'tx no longer on canonical chain');
+      }
+      return;
+    }
 
     if (receipt.status === 0) {
       // Mined but reverted — terminal failure.
@@ -115,25 +126,64 @@ export class ChainListenerService implements OnApplicationBootstrap {
       return;
     }
 
+    // Reorg: the tx was re-mined in a different block than we recorded at
+    // CONFIRMED. Revert to SUBMITTED and let it re-confirm from the new block.
+    if (
+      settlement.confirmedBlockHash &&
+      settlement.confirmedBlockHash !== receipt.blockHash
+    ) {
+      await this.handleReorg(
+        settlement,
+        `block hash changed ${settlement.confirmedBlockHash} -> ${receipt.blockHash}`,
+      );
+      return;
+    }
+
     const confirmations = currentBlock - receipt.blockNumber + 1;
 
     if (confirmations >= this.config.confirmationsFinal) {
-      await this.finalize(settlement);
+      await this.finalize(settlement, receipt);
     } else if (
       confirmations >= this.config.confirmationsConfirmed &&
       settlement.status === SettlementStatus.SUBMITTED
     ) {
+      // Record where it was confirmed so a later reorg is detectable.
       await this.state.transition(settlement.id, SettlementStatus.CONFIRMED, {
         txHash: settlement.txHash,
         expectedFrom: [SettlementStatus.SUBMITTED],
+        confirmedBlockHash: receipt.blockHash,
+        confirmedBlockNumber: receipt.blockNumber,
       });
       this.logger.log(
-        `Settlement ${settlement.id} CONFIRMED (${confirmations} confs)`,
+        `Settlement ${settlement.id} CONFIRMED (${confirmations} confs) block=${receipt.blockNumber}`,
       );
     }
   }
 
-  private async finalize(settlement: Settlement): Promise<void> {
+  /**
+   * Revert an in-flight (CONFIRMED) settlement whose tx was reorged back to
+   * SUBMITTED, clearing the recorded block so it re-confirms cleanly. FINAL
+   * settlements are never polled, so the ledger is never reorg-reversed.
+   */
+  private async handleReorg(
+    settlement: Settlement,
+    reason: string,
+  ): Promise<void> {
+    this.logger.warn(
+      `REORG settlement=${settlement.id} tx=${settlement.txHash}: ${reason} — reverting to SUBMITTED`,
+    );
+    this.metrics.reorgs.inc();
+    await this.state.transition(settlement.id, SettlementStatus.SUBMITTED, {
+      expectedFrom: [SettlementStatus.CONFIRMED],
+      confirmedBlockHash: null,
+      confirmedBlockNumber: null,
+    });
+  }
+
+  private async finalize(
+    settlement: Settlement,
+    receipt: TransactionReceipt,
+  ): Promise<void> {
     // Book the ledger FIRST (idempotent via unique constraint), then flip status.
     await this.ledger.recordSettlementFinalized(
       settlement.id,
@@ -148,6 +198,8 @@ export class ChainListenerService implements OnApplicationBootstrap {
       },
     );
     if (moved) {
+      // Count gas only on the first finalization (moved !== null).
+      this.metrics.gasWei.inc(Number(receipt.gasUsed * receipt.gasPrice));
       this.logger.log(
         `Settlement ${settlement.id} FINAL tx=${settlement.txHash}`,
       );

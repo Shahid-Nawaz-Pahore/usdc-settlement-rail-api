@@ -3,9 +3,25 @@
 
 # settlement-rail
 
-A minimal clearing-to-chain integration layer: it accepts settlement instructions over REST and settles them as USDC (ERC-20) transfers on **Ethereum Sepolia** through a self-built relayer — tracking confirmations from chain events, maintaining a double-entry internal ledger in Postgres, and continuously reconciling the ledger against the on-chain balance. The interesting engineering is the relayer (strict nonce discipline, gas-bump resends, restart recovery) and the listener-driven, reconciled ledger that treats the chain as the source of truth.
+The integration layer between a **clearing system and a blockchain**: it translates settlement instructions into on-chain **USDC (ERC-20)** transfers on **Ethereum Sepolia**, then keeps an internal ledger reconciled with the chain in real time. It covers the full breadth of the problem — **transaction orchestration** (creation, signing, broadcasting, monitoring), confirmation tracking driven by chain events, **reorg-safe** finality, a double-entry **ledger ↔ chain reconciliation** loop, an **event-driven** outbox for downstream systems, **Delivery-vs-Payment (DvP)** conditional settlement via an on-chain escrow, **non-custodial** signing behind a pluggable signer, and first-class **observability**.
+
+Money moves exactly once (idempotent), only on what the chain actually confirms (the listener is the source of truth), and never breaks under failed transactions, retries, restarts, or reorgs.
 
 Live behavior is evidenced in **[TESTING.md](TESTING.md)** with real transaction links.
+
+## Capabilities at a glance
+
+| Area | What it does |
+| --- | --- |
+| **Transaction orchestration** | Self-built relayer: strict nonce discipline, gas-bump resends, retry classification, restart recovery |
+| **Confirmation tracking** | WSS + receipt-poll listener; CONFIRMED/FINAL at configurable block depths; chain is source of truth |
+| **Reorg-safe finality** | Persists the confirmation block; reverts in-flight settlements if the tx is reorged, then re-confirms |
+| **Ledger ↔ chain reconciliation** | Append-only double-entry ledger; independent reconciler flags drift, never auto-corrects |
+| **Event-driven** | Transactional outbox → **Redis Streams** (`settlement.submitted/confirmed/final/failed`) for clearing-system consumers |
+| **DvP / conditional settlement** | On-chain escrow: funds locked, released to the beneficiary only on the settler's action; refund on timeout |
+| **Non-custodial signing** | `ISigner` abstraction — env key today, KMS/HSM/MPC pluggable; the app never touches the key |
+| **Observability** | Prometheus `/metrics`, structured JSON logs (pino), DB+RPC readiness probe |
+| **Compliance** | Pluggable `IComplianceProvider` (mock blocklist → Chainalysis/TRM) screening before broadcast |
 
 ## Run in 5 minutes (Docker)
 
@@ -54,11 +70,13 @@ flowchart TD
     H --> I[RelayerService.enqueue]
     I --> J[(FIFO queue)]
     J --> K[Worker: 1 tx at a time]
-    K --> L[Assign nonce, build USDC transfer,\nestimate gas, broadcast]
-    L --> M[Persist txHash + nonce, status SUBMITTED]
+    K --> L[Assign nonce, sign via ISigner,\nbuild USDC transfer, broadcast]
+    L --> M[Tx: status SUBMITTED + outbox event\nin one DB transaction]
+    M --> O[(OutboxRelay)]
+    O --> BR[[Redis Streams\nsettlement.submitted]]
 ```
 
-The relayer worker is strictly sequential — exactly one transaction in flight from the operator wallet at a time (see [Design decisions](#design-decisions)).
+The relayer worker is strictly sequential — exactly one transaction in flight from the operator at a time, signed through the pluggable `ISigner` (see [Design decisions](#design-decisions)). Every status change writes an event to a transactional **outbox**, relayed to **Redis Streams** for a clearing system to consume.
 
 ### Flow 2 — Confirmation & reconciliation loop (chain → books)
 
@@ -66,8 +84,10 @@ The relayer worker is strictly sequential — exactly one transaction in flight 
 flowchart TD
     subgraph Listener [chain-listener]
         W[WSS: USDC Transfer where from = operator] --> P
-        P[Poll each pending receipt every ~5s] --> Q{confirmations}
-        Q -- ">= CONFIRMED" --> CF[status CONFIRMED]
+        P[Poll each pending receipt every ~5s] --> RG{block hash changed\nor tx dropped?}
+        RG -- "reorg" --> REV[Revert CONFIRMED -> SUBMITTED\nclear block, chain_reorgs_total++]
+        RG -- "canonical" --> Q{confirmations}
+        Q -- ">= CONFIRMED" --> CF[status CONFIRMED\npersist blockHash]
         Q -- ">= FINAL" --> FIN[Book ledger DEBIT/CREDIT\nthen status FINAL]
         Q -- "receipt.status == 0" --> RV[status FAILED reverted]
     end
@@ -77,13 +97,28 @@ flowchart TD
     end
 
     subgraph Recon [reconciliation cron RECON_CRON]
-        RC[ledgerBalance - pendingAmount vs chainBalance] --> RM{within 1e-6?}
+        RC[ledgerBalance - minedPending vs chainBalance] --> RM{within 1e-6?}
         RM -- yes --> MA[(ReconciliationRun MATCHED)]
         RM -- no --> MM[(ReconciliationRun MISMATCH + log.error)]
     end
 
     FIN --> LED[(LedgerEntry: append-only)]
+    FIN --> OB[(Outbox -> Redis Streams\nsettlement.final)]
     LED --> RC
+```
+
+### Flow 3 — Delivery-vs-Payment (conditional settlement)
+
+For atomic, conditional settlement the rail uses an on-chain **DvPEscrow**: USDC is locked, and released to the beneficiary *only* when the settler confirms the delivery condition — otherwise refunded on timeout. The operator is the authorized settler; release is never automatic, which is the DvP guarantee.
+
+```mermaid
+flowchart LR
+    A[POST /settlements/dvp] --> B[approve + escrow.fund\nUSDC locked, state=Funded]
+    B --> C{settlement condition met?}
+    C -- yes --> D[POST .../release\nescrow.release -> beneficiary]
+    C -- "no / deadline" --> E[refund or cancel\n-> depositor]
+    D --> F[state=Released]
+    E --> G[state=Refunded]
 ```
 
 ### Status lifecycle
@@ -183,6 +218,8 @@ All variables are validated by a Joi schema at boot (fail fast). See **[.env.exa
 | `CONFIRMATIONS_CONFIRMED` / `CONFIRMATIONS_FINAL` | Block depths for CONFIRMED / FINAL |
 | `STUCK_TX_SECONDS` / `MAX_RETRIES` | Gas-bump threshold and retry cap |
 | `RECON_CRON` | Reconciliation schedule |
+| `REDIS_URL` | Redis (Streams) for the event outbox (optional → log-only) |
+| `DVP_ESCROW_ADDRESS` | Deployed DvPEscrow address (optional → `/settlements/dvp` 503) |
 | `ALLOWED_ORIGIN` | CORS allowlist (comma-separated; never `*`) |
 | `THROTTLE_TTL_SECONDS` / `THROTTLE_LIMIT` | Rate limit for `POST /settlements` |
 
@@ -203,9 +240,16 @@ npm run lint:check          # eslint (no autofix)
 npm run format:check        # prettier check
 npm test                    # unit tests — no DB/RPC needed (dependencies mocked)
 npm run build
+
+cd contracts && npm install && npm test   # Solidity DvPEscrow (Hardhat)
 ```
 
 Live, on-chain verification (the real evidence) is in **[TESTING.md](TESTING.md)**, driven by `scripts/live-verify.mjs`.
+
+## Deploy
+
+- **Always-on (recommended):** the **[`render.yaml`](render.yaml)** blueprint runs the full service — relayer worker, listener, cron, and outbox relay — with managed Postgres, on Render (or any Docker host via the **[`Dockerfile`](Dockerfile)**).
+- **Serverless caveat:** Vercel and similar host the REST API but **cannot run the background workers**, so settlements won't advance past SUBMITTED there — use it only for read/demo.
 
 ---
 
@@ -249,9 +293,21 @@ A single settlement, or `404`.
 
 Runs reconciliation on demand and returns the persisted `ReconciliationRun` (`MATCHED` / `MISMATCH`). The same run executes on the `RECON_CRON` schedule.
 
-### `GET /health`
+### DvP (Delivery-vs-Payment)
 
-Liveness probe: `{ "status": "ok" }`.
+- `POST /settlements/dvp` — fund an escrow deal `{ instructionId, beneficiary, amount, deadlineSeconds? }`; locks USDC (`approve` + `fund`).
+- `POST /settlements/dvp/:instructionId/release` — settler releases the escrow to the beneficiary (condition met).
+- `GET /settlements/dvp/:instructionId` — on-chain deal state (`Funded` / `Released` / `Refunded`).
+
+Returns `503` if `DVP_ESCROW_ADDRESS` is unset. The contract + Hardhat tests live in [`contracts/`](contracts/).
+
+### `GET /health` · `GET /health/live`
+
+Readiness (checks DB + RPC, `503` when degraded) and liveness (`{ "status": "ok" }`).
+
+### `GET /metrics`
+
+Prometheus exposition: `settlements_by_status`, `relayer_broadcasts_total`, `relayer_gas_wei_total`, `reconciliation_runs_total`, `reconciliation_mismatches_total`, `chain_reorgs_total`, `relayer_queue_depth`, plus default Node metrics.
 
 ---
 
@@ -269,15 +325,19 @@ It talks to this API over the public routes below. For a deployed build it sets 
 | --- | --- |
 | `config` | Joi-validated env + typed `AppConfigService` |
 | `prisma` | Prisma 7 client (pg driver adapter) |
-| `chain` | HTTP/WSS providers, operator wallet, USDC contract, WSS auto-reconnect |
+| `signer` | `ISigner` abstraction — `EnvKeySigner` today, KMS/HSM/MPC pluggable |
+| `chain` | HTTP/WSS providers, signer-backed USDC contract, WSS auto-reconnect |
 | `ledger` | Append-only double-entry ledger + opening snapshot |
 | `compliance` | `IComplianceProvider` + mock blocklist (swap point) |
-| `settlement-state` | Settlement repository + atomic status-transition writes |
+| `settlement-state` | Settlement repository + atomic status-transition + outbox writes |
 | `relayer` | FIFO worker, nonce management, gas-bump `StuckTxWatcher`, restart recovery |
-| `chain-listener` | Transfer subscription + receipt-depth confirmations + finalization |
-| `settlements` | REST API, idempotency, balance checks, presenter |
+| `chain-listener` | Transfer subscription + receipt-depth confirmations + **reorg detection** + finalization |
 | `reconciliation` | Ledger-vs-chain check (cron + on demand) |
-| `health` | Liveness probe for container/orchestrator checks |
+| `outbox` | Transactional outbox + Redis Streams publisher (`IEventPublisher`) |
+| `dvp` | DvPEscrow orchestration — fund / conditional release / refund |
+| `observability` | Prometheus `/metrics` + collector |
+| `settlements` | REST API, idempotency, balance checks, presenter |
+| `health` | DB+RPC readiness + liveness probes |
 
 > **Money math** uses `Prisma.Decimal` / `bigint` (base units via the contract's `decimals`) — never floating point.
 >
