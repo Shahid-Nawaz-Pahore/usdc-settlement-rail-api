@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ChainService } from '../chain/chain.service';
 import { LedgerService } from '../ledger/ledger.service';
+import { MetricsService } from '../observability/metrics.service';
 import {
   PENDING_STATUSES,
   SettlementStateService,
@@ -44,6 +45,7 @@ export class ReconciliationService implements OnModuleInit {
     private readonly state: SettlementStateService,
     private readonly config: AppConfigService,
     private readonly registry: SchedulerRegistry,
+    private readonly metrics: MetricsService,
   ) {}
 
   onModuleInit(): void {
@@ -80,6 +82,9 @@ export class ReconciliationService implements OnModuleInit {
         status,
       },
     });
+
+    this.metrics.reconRuns.inc({ status });
+    if (!matched) this.metrics.reconMismatches.inc();
 
     if (matched) {
       this.logger.log(

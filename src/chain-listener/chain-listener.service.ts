@@ -5,6 +5,8 @@ import { ChainService } from '../chain/chain.service';
 import { AppConfigService } from '../config/app-config.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { SettlementStateService } from '../settlement-state/settlement-state.service';
+import { MetricsService } from '../observability/metrics.service';
+import type { TransactionReceipt } from 'ethers';
 
 /**
  * The chain is the source of truth. This service:
@@ -27,6 +29,7 @@ export class ChainListenerService implements OnApplicationBootstrap {
     private readonly config: AppConfigService,
     private readonly state: SettlementStateService,
     private readonly ledger: LedgerService,
+    private readonly metrics: MetricsService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -118,7 +121,7 @@ export class ChainListenerService implements OnApplicationBootstrap {
     const confirmations = currentBlock - receipt.blockNumber + 1;
 
     if (confirmations >= this.config.confirmationsFinal) {
-      await this.finalize(settlement);
+      await this.finalize(settlement, receipt);
     } else if (
       confirmations >= this.config.confirmationsConfirmed &&
       settlement.status === SettlementStatus.SUBMITTED
@@ -133,7 +136,10 @@ export class ChainListenerService implements OnApplicationBootstrap {
     }
   }
 
-  private async finalize(settlement: Settlement): Promise<void> {
+  private async finalize(
+    settlement: Settlement,
+    receipt: TransactionReceipt,
+  ): Promise<void> {
     // Book the ledger FIRST (idempotent via unique constraint), then flip status.
     await this.ledger.recordSettlementFinalized(
       settlement.id,
@@ -148,6 +154,8 @@ export class ChainListenerService implements OnApplicationBootstrap {
       },
     );
     if (moved) {
+      // Count gas only on the first finalization (moved !== null).
+      this.metrics.gasWei.inc(Number(receipt.gasUsed * receipt.gasPrice));
       this.logger.log(
         `Settlement ${settlement.id} FINAL tx=${settlement.txHash}`,
       );

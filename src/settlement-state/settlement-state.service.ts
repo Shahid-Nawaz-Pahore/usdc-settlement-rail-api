@@ -102,6 +102,18 @@ export class SettlementStateService {
     return agg._sum.amount ?? new Prisma.Decimal(0);
   }
 
+  /** Count of real settlements per status (excludes the GENESIS pseudo-row). */
+  async countByStatus(): Promise<Record<string, number>> {
+    const rows = await this.prisma.settlement.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+      where: { instructionId: { not: '__genesis_opening_balance__' } },
+    });
+    const counts: Record<string, number> = {};
+    for (const row of rows) counts[row.status] = row._count._all;
+    return counts;
+  }
+
   /**
    * Atomically: update the settlement's status (+ optional fields) and append a
    * StatusTransition row, in a single DB transaction. Returns the updated row,

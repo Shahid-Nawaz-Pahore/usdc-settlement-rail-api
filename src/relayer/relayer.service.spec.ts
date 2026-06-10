@@ -63,6 +63,10 @@ function buildState(seed: Record<string, any>) {
 }
 
 const config = { maxRetries: 3, stuckTxSeconds: 60 } as any;
+const metrics = {
+  broadcasts: { inc: jest.fn() },
+  queueDepth: { set: jest.fn() },
+} as any;
 
 describe('RelayerService', () => {
   it('assigns strictly increasing, contiguous nonces across concurrent enqueues', async () => {
@@ -73,7 +77,12 @@ describe('RelayerService', () => {
       s3: settlement('s3'),
     };
     const state = buildState(seed);
-    const relayer = new RelayerService(chain as any, config, state as any);
+    const relayer = new RelayerService(
+      chain as any,
+      config,
+      state as any,
+      metrics,
+    );
 
     await relayer.onApplicationBootstrap(); // fetches pending nonce = 5
 
@@ -111,7 +120,12 @@ describe('RelayerService', () => {
       nonce: 7,
     });
 
-    const relayer = new RelayerService(chain as any, config, state as any);
+    const relayer = new RelayerService(
+      chain as any,
+      config,
+      state as any,
+      metrics,
+    );
     await relayer.sweepStuckTransactions();
 
     expect(transfer).toHaveBeenCalledTimes(1);
@@ -137,7 +151,12 @@ describe('RelayerService', () => {
     const state = buildState({ stuck2: stuck });
     provider.getTransactionReceipt.mockResolvedValue(null);
 
-    const relayer = new RelayerService(chain as any, config, state as any);
+    const relayer = new RelayerService(
+      chain as any,
+      config,
+      state as any,
+      metrics,
+    );
     await relayer.sweepStuckTransactions();
 
     expect(transfer).not.toHaveBeenCalled();
