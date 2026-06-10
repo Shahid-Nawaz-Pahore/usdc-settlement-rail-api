@@ -1,0 +1,50 @@
+# Fly.io config — always-on deploy of the settlement rail (relayer worker,
+# chain-listener, cron, outbox relay all run). Reuses Neon (Postgres) and
+# Upstash (Redis) via secrets; no managed DB needed on Fly.
+#
+# Deploy:
+#   fly auth login
+#   fly apps create settlement-rail-api        # if taken, pick another + update `app` below
+#   fly secrets set DATABASE_URL="..." OPERATOR_PRIVATE_KEY="..." \
+#       RPC_HTTP_URL="..." RPC_WSS_URL="..." REDIS_URL="..." \
+#       ALLOWED_ORIGIN="https://settlement-rail-dashboard.vercel.app,http://localhost:3001" \
+#       --app settlement-rail-api
+#   fly deploy --app settlement-rail-api
+
+app = "settlement-rail-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  USDC_CONTRACT_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+  CONFIRMATIONS_CONFIRMED = "1"
+  CONFIRMATIONS_FINAL = "5"
+  STUCK_TX_SECONDS = "60"
+  MAX_RETRIES = "3"
+  RECON_CRON = "*/5 * * * *"
+  THROTTLE_TTL_SECONDS = "60"
+  THROTTLE_LIMIT = "10"
+  DVP_ESCROW_ADDRESS = "0xFF4490C1ba7CAb6C3C9e8010553b699986f608C0"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Keep one machine running 24/7 so the workers (listener/cron/relayer) stay alive.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "40s"
+    method = "GET"
+    path = "/health/live"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
