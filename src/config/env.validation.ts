@@ -39,6 +39,11 @@ export const envValidationSchema = Joi.object({
     .uri({ scheme: ['redis', 'rediss'] })
     .optional(),
 
+  // Optional: deployed DvPEscrow address. Unset → /settlements/dvp returns 503.
+  DVP_ESCROW_ADDRESS: Joi.string()
+    .pattern(/^0x[0-9a-fA-F]{40}$/)
+    .optional(),
+
   PORT: Joi.number().integer().min(1).max(65535).default(3000),
 }).custom((value: Record<string, number>, helpers) => {
   if (value.CONFIRMATIONS_FINAL < value.CONFIRMATIONS_CONFIRMED) {

@@ -16,6 +16,7 @@ import { SettlementsModule } from './settlements/settlements.module';
 import { ReconciliationModule } from './reconciliation/reconciliation.module';
 import { HealthModule } from './health/health.module';
 import { OutboxModule } from './outbox/outbox.module';
+import { DvpModule } from './dvp/dvp.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { OutboxModule } from './outbox/outbox.module';
     ReconciliationModule,
     HealthModule,
     OutboxModule,
+    DvpModule,
   ],
 })
 export class AppModule {}
