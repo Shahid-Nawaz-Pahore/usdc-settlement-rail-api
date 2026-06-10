@@ -45,6 +45,9 @@ model Settlement {
   nonce         Int?
   failureReason String?
   retryCount    Int              @default(0)
+  // Block the tx was seen mined in at CONFIRMED — used to detect reorgs.
+  confirmedBlockHash   String?
+  confirmedBlockNumber Int?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 

@@ -26,6 +26,8 @@ export interface TransitionOptions {
   nonce?: number | null;
   failureReason?: string | null;
   retryCount?: number;
+  confirmedBlockHash?: string | null;
+  confirmedBlockNumber?: number | null;
   /** If set, the transition is skipped (no-op) unless current status is one of these. */
   expectedFrom?: SettlementStatus[];
 }
@@ -140,6 +142,10 @@ export class SettlementStateService {
       if (opts.failureReason !== undefined)
         data.failureReason = opts.failureReason;
       if (opts.retryCount !== undefined) data.retryCount = opts.retryCount;
+      if (opts.confirmedBlockHash !== undefined)
+        data.confirmedBlockHash = opts.confirmedBlockHash;
+      if (opts.confirmedBlockNumber !== undefined)
+        data.confirmedBlockNumber = opts.confirmedBlockNumber;
 
       const next = await tx.settlement.update({ where: { id }, data });
 

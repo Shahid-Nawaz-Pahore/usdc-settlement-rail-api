@@ -39,6 +39,13 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /** Chain reorgs detected on an in-flight settlement (reverted to SUBMITTED). */
+  readonly reorgs = new Counter({
+    name: 'chain_reorgs_total',
+    help: 'In-flight settlements reverted because their tx was reorged',
+    registers: [this.registry],
+  });
+
   /** Relayer in-flight queue depth (queued + broadcast-not-yet-mined). */
   readonly queueDepth = new Gauge({
     name: 'relayer_queue_depth',
